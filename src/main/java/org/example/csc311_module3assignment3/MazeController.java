@@ -3,6 +3,12 @@ package org.example.csc311_module3assignment3;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 import javafx.scene.paint.Color;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class MazeController {
 
@@ -25,6 +31,10 @@ public class MazeController {
     private int moveSpeed = 2;
     private boolean running = false;
 
+    // Pre-computed BFS path for maze2 (avoids wall-follow spinning in open space)
+    private List<int[]> bfsPath = null;
+    private int bfsIndex = 0;
+
     private Car car;
     private MazeListener listener;
 
@@ -43,6 +53,10 @@ public class MazeController {
 
         findStartPosition();
         car = new Car(x, y);
+        currentDir = findOpenDirection();
+        if (isMaze2()) {
+            bfsPath = computeBfsPath(x, y);
+        }
     }
 
     private boolean isMaze2() {
@@ -85,7 +99,11 @@ public class MazeController {
 
         if (isMaze2()) {
 
-            // Detection values changed
+            // Purple exit square must be checked FIRST — its high blue value would
+            // otherwise make it look like a blue wall, blocking the sprite from entering
+            boolean isPurpleExit = c.getRed() > 0.35 && c.getGreen() < 0.15 && c.getBlue() > 0.35;
+            if (isPurpleExit) return true;
+
             boolean isBlueWall =
                     c.getBlue() > 0.5 &&
                             c.getBlue() > c.getRed() * 1.5 &&
@@ -176,10 +194,64 @@ public class MazeController {
         car.setX(x);
         car.setY(y);
         car.setHeading(Car.RIGHT);
-        // figure out the best starting direction based on which way is open
         currentDir = findOpenDirection();
+        bfsPath = null;
+        bfsIndex = 0;
+        if (isMaze2()) {
+            bfsPath = computeBfsPath(x, y);
+        }
         listener.positionChanged();
         listener.statusChanged("Ready - use arrow keys to move");
+    }
+
+    private List<int[]> computeBfsPath(int startX, int startY) {
+        Map<Long, Long> parent = new HashMap<>();
+        Deque<long[]> queue = new ArrayDeque<>();
+        long startKey = encode(startX, startY);
+        parent.put(startKey, -1L);
+        queue.add(new long[]{ startX, startY });
+        int[][] deltas = { {moveSpeed,0},{-moveSpeed,0},{0,moveSpeed},{0,-moveSpeed} };
+        long goalKey = -1;
+        int goalX = -1, goalY = -1;
+
+        outer:
+        while (!queue.isEmpty()) {
+            long[] cur = queue.poll();
+            int cx = (int) cur[0], cy = (int) cur[1];
+            int sz = car.getSize();
+            int[][] checks = { {cx+sz/2,cy+sz/2},{cx,cy},{cx+sz,cy},{cx,cy+sz},{cx+sz,cy+sz} };
+            for (int[] ch : checks) {
+                if (isPurple(ch[0], ch[1])) {
+                    goalKey = encode(cx, cy);
+                    goalX = cx; goalY = cy;
+                    break outer;
+                }
+            }
+            for (int[] d : deltas) {
+                int nx = cx + d[0], ny = cy + d[1];
+                long nk = encode(nx, ny);
+                if (!parent.containsKey(nk) && canGoTo(nx, ny)) {
+                    parent.put(nk, encode(cx, cy));
+                    queue.add(new long[]{ nx, ny });
+                }
+            }
+        }
+
+        if (goalX == -1) return null;
+
+        List<int[]> path = new ArrayList<>();
+        long cur = goalKey;
+        while (cur != -1L) {
+            int px = (int)(cur >> 16), py = (int)(cur & 0xFFFFL);
+            path.add(0, new int[]{ px, py });
+            Long p = parent.get(cur);
+            cur = (p != null) ? p : -1L;
+        }
+        return path;
+    }
+
+    private long encode(int x, int y) {
+        return ((long) x << 16) | (y & 0xFFFFL);
     }
 
     // looks at the 4 directions from the start and returns the first one that is open
@@ -197,17 +269,36 @@ public class MazeController {
     public void doAutoStep() {
         if (!running) return;
 
-        int[] tryOrder;
-
         if (isMaze2()) {
-
-            tryOrder = new int[]{ Car.RIGHT, Car.DOWN, Car.LEFT, Car.UP };
-        } else {
-            int leftDir = turnLeft(currentDir);
-            int rightDir = turnRight(currentDir);
-            int backDir = turnBack(currentDir);
-            tryOrder = new int[]{ leftDir, currentDir, rightDir, backDir };
+            // Follow pre-computed BFS path
+            if (bfsPath == null || bfsIndex >= bfsPath.size()) {
+                running = false;
+                listener.statusChanged("Stuck! Press Reset to try again.");
+                return;
+            }
+            int[] next = bfsPath.get(bfsIndex++);
+            int nx = next[0], ny = next[1];
+            // Determine heading from movement direction
+            int dx = nx - x, dy = ny - y;
+            int dir = currentDir;
+            if (dx > 0) dir = Car.RIGHT;
+            else if (dx < 0) dir = Car.LEFT;
+            else if (dy > 0) dir = Car.DOWN;
+            else if (dy < 0) dir = Car.UP;
+            currentDir = dir;
+            x = nx; y = ny;
+            car.setX(x); car.setY(y);
+            car.setHeading(dir);
+            listener.positionChanged();
+            checkExit();
+            return;
         }
+
+        // Maze1: left-hand wall-following
+        int leftDir = turnLeft(currentDir);
+        int rightDir = turnRight(currentDir);
+        int backDir = turnBack(currentDir);
+        int[] tryOrder = new int[]{ leftDir, currentDir, rightDir, backDir };
 
         for (int d : tryOrder) {
             int[] delta = getMoveDelta(d);
