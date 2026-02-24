@@ -84,8 +84,14 @@ public class MazeController {
         Color c = pixelReader.getColor(px, py);
 
         if (isMaze2()) {
-            boolean isBlue = c.getBlue() > 0.7 && c.getGreen() > 0.3 && c.getRed() < 0.3;
-            return !isBlue;
+
+            // Detection values changed
+            boolean isBlueWall =
+                    c.getBlue() > 0.5 &&
+                            c.getBlue() > c.getRed() * 1.5 &&
+                            c.getBlue() > c.getGreen() * 1.5;
+
+            return !isBlueWall;
         } else {
             return c.getRed() > 0.78 && c.getGreen() > 0.78 && c.getBlue() > 0.78;
         }
