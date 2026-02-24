@@ -19,7 +19,9 @@ public class MazeController {
     private int x;
     private int y;
     private int currentDir;
-    private int spriteSize = 18;
+    public int getSpriteSize() {
+        return car.getSize();
+    }
     private int moveSpeed = 2;
     private boolean running = false;
 
@@ -66,14 +68,8 @@ public class MazeController {
                 }
             }
         } else {
-            // maze1,find the white gap on the left edge
-            for (int row = 0; row < (int) mazeImage.getHeight(); row++) {
-                if (isPathPixel(3, row)) {
-                    x = 3;
-                    y = row;
-                    return;
-                }
-            }
+            x = 0;
+            y = 260;
         }
     }
 
@@ -96,7 +92,7 @@ public class MazeController {
     }
 
     public boolean canGoTo(int newX, int newY) {
-        int sz = spriteSize;
+        int sz = car.getSize();
         boolean tl  = isPathPixel(newX,           newY);
         boolean tr  = isPathPixel(newX + sz - 1,  newY);
         boolean bl  = isPathPixel(newX,            newY + sz - 1);
@@ -138,7 +134,7 @@ public class MazeController {
 
         if (isMaze2()) {
             // exit = the purple square in the bottom right corner
-            int sz = spriteSize;
+            int sz = car.getSize();
             if (isPurple(x + sz / 2, y + sz / 2) ||
                     isPurple(x,          y         )  ||
                     isPurple(x + sz,     y         )  ||
@@ -150,7 +146,7 @@ public class MazeController {
             }
         } else {
             // maze1: exit is the opening on the right edge
-            if (x + spriteSize >= (int) mazeImage.getWidth() - 2) {
+            if (x + car.getSize() >= (int) mazeImage.getWidth() - 2) {
                 running = false;
                 listener.statusChanged("You made it out!");
                 listener.exitReached();
@@ -263,7 +259,6 @@ public class MazeController {
 
     public int getX() { return x; }
     public int getY() { return y; }
-    public int getSpriteSize() { return spriteSize; }
     public int getMoveSpeed() { return moveSpeed; }
     public Car getCar() { return car; }
     public Image getMazeImage() { return mazeImage; }
