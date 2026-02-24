@@ -70,12 +70,12 @@ public class Car {
         // right window
         gc.fillRect(x + 10, y + 1, 6, 4);
 
-        // wheels (black ovals)
+        // wheels
         gc.setFill(Color.BLACK);
         gc.fillOval(x,      y + 12, 7, 7);
         gc.fillOval(x + 13, y + 12, 7, 7);
 
-        // headlight (yellow dot on the front)
+        // headlight
         gc.setFill(Color.YELLOW);
         gc.fillOval(x + 19, y + 7, 3, 3);
 

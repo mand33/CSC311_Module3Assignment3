@@ -4,29 +4,23 @@ import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 import javafx.scene.paint.Color;
 
-//maze logic here
 public class MazeController {
 
-
     public interface MazeListener {
-        void onPositionChanged();
-        void onStatusChanged(String message);
-        void onExitReached();
+        void positionChanged();
+        void statusChanged(String message);
+        void exitReached();
     }
 
     private Image mazeImage;
     private PixelReader pixelReader;
+    private String mazeFile;
 
-    // x, y pos
     private int x;
     private int y;
-
-    // direction
     private int currentDir;
-
     private int spriteSize = 18;
     private int moveSpeed = 2;
-    //is true whennauto animate
     private boolean running = false;
 
     private Car car;
@@ -34,35 +28,57 @@ public class MazeController {
 
     public MazeController(String mazeFile, MazeListener listener) {
         this.listener = listener;
+        this.mazeFile = mazeFile;
         this.currentDir = Car.RIGHT;
 
         try {
             String path = "/org/example/csc311_module3assignment3/" + mazeFile;
-            Image img = new Image(getClass().getResourceAsStream(path));
-            mazeImage = img;
+            mazeImage = new Image(getClass().getResourceAsStream(path));
             pixelReader = mazeImage.getPixelReader();
         } catch (Exception e) {
-            System.out.println("couldnt load maze image");
+            System.out.println("Could not load maze: " + e.getMessage());
         }
 
         findStartPosition();
         car = new Car(x, y);
     }
+
+    private boolean isMaze2() {
+        return mazeFile != null && mazeFile.contains("maze2");
+    }
+
     private void findStartPosition() {
         x = 3;
         y = 10;
         if (mazeImage == null) return;
 
-        for (int row = 0; row < (int) mazeImage.getHeight(); row++) {
-            if (isPathPixel(3, row)) {
-                x = 3;
-                y = row;
-                return;
+        if (isMaze2()) {
+
+            for (int row = 0; row < (int) mazeImage.getHeight(); row++) {
+                for (int col = 0; col < (int) mazeImage.getWidth(); col++) {
+                    Color c = pixelReader.getColor(col, row);
+                    if (c.getRed() > 0.7 && c.getGreen() > 0.35 && c.getGreen() < 0.6 && c.getBlue() < 0.15) {
+
+                        x = col + 25;
+                        y = row;
+                        return;
+                    }
+                }
+            }
+        } else {
+            // maze1,find the white gap on the left edge
+            for (int row = 0; row < (int) mazeImage.getHeight(); row++) {
+                if (isPathPixel(3, row)) {
+                    x = 3;
+                    y = row;
+                    return;
+                }
             }
         }
     }
 
-    //checks if pixel is white, then can move
+    // maze1= white pixels are the path
+    // maze2=anything not a blue poxel is walkable
     public boolean isPathPixel(int px, int py) {
         if (pixelReader == null) return false;
         if (px < 0 || py < 0) return false;
@@ -70,7 +86,13 @@ public class MazeController {
         if (py >= (int) mazeImage.getHeight()) return false;
 
         Color c = pixelReader.getColor(px, py);
-        return c.getRed() > 0.78 && c.getGreen() > 0.78 && c.getBlue() > 0.78;
+
+        if (isMaze2()) {
+            boolean isBlue = c.getBlue() > 0.7 && c.getGreen() > 0.3 && c.getRed() < 0.3;
+            return !isBlue;
+        } else {
+            return c.getRed() > 0.78 && c.getGreen() > 0.78 && c.getBlue() > 0.78;
+        }
     }
 
     public boolean canGoTo(int newX, int newY) {
@@ -85,7 +107,6 @@ public class MazeController {
 
     public void tryMove(int dx, int dy, int dir) {
         int steps = Math.abs(dx != 0 ? dx : dy);
-
         int stepX = 0;
         int stepY = 0;
         if (dx > 0) stepX =  1;
@@ -108,41 +129,83 @@ public class MazeController {
         }
 
         currentDir = dir;
-        listener.onPositionChanged();
+        listener.positionChanged();
         checkExit();
     }
 
-
     private void checkExit() {
         if (mazeImage == null) return;
-        if (x + spriteSize >= (int) mazeImage.getWidth() - 2) {
-            running = false;
-            listener.onStatusChanged("You made it out!");
-            listener.onExitReached();
+
+        if (isMaze2()) {
+            // exit = the purple square in the bottom right corner
+            int sz = spriteSize;
+            if (isPurple(x + sz / 2, y + sz / 2) ||
+                    isPurple(x,          y         )  ||
+                    isPurple(x + sz,     y         )  ||
+                    isPurple(x,          y + sz    )  ||
+                    isPurple(x + sz,     y + sz    )) {
+                running = false;
+                listener.statusChanged("You made it out!");
+                listener.exitReached();
+            }
+        } else {
+            // maze1: exit is the opening on the right edge
+            if (x + spriteSize >= (int) mazeImage.getWidth() - 2) {
+                running = false;
+                listener.statusChanged("You made it out!");
+                listener.exitReached();
+            }
         }
     }
 
-    // resets
+    // purple: high red, very low green, high blue
+    // tighter threshold so it doesn't confuse orange circle with purple square
+    private boolean isPurple(int px, int py) {
+        if (px < 0 || py < 0) return false;
+        if (px >= (int) mazeImage.getWidth()) return false;
+        if (py >= (int) mazeImage.getHeight()) return false;
+        Color c = pixelReader.getColor(px, py);
+        return c.getRed() > 0.35 && c.getGreen() < 0.15 && c.getBlue() > 0.35;
+    }
+
     public void reset() {
         running = false;
         findStartPosition();
         car.setX(x);
         car.setY(y);
         car.setHeading(Car.RIGHT);
-        currentDir = Car.RIGHT;
-        listener.onPositionChanged();
-        listener.onStatusChanged("Ready - use arrow keys to move");
+        // figure out the best starting direction based on which way is open
+        currentDir = findOpenDirection();
+        listener.positionChanged();
+        listener.statusChanged("Ready - use arrow keys to move");
     }
 
+    // looks at the 4 directions from the start and returns the first one that is open
+    private int findOpenDirection() {
+        int[] dirs = { Car.RIGHT, Car.DOWN, Car.UP, Car.LEFT };
+        for (int d : dirs) {
+            int[] delta = getMoveDelta(d);
+            if (canGoTo(x + delta[0], y + delta[1])) {
+                return d;
+            }
+        }
+        return Car.RIGHT;
+    }
 
     public void doAutoStep() {
         if (!running) return;
 
-        int leftDir  = turnLeft(currentDir);
-        int rightDir = turnRight(currentDir);
-        int backDir  = turnBack(currentDir);
+        int[] tryOrder;
 
-        int[] tryOrder = { leftDir, currentDir, rightDir, backDir };
+        if (isMaze2()) {
+
+            tryOrder = new int[]{ Car.RIGHT, Car.DOWN, Car.LEFT, Car.UP };
+        } else {
+            int leftDir = turnLeft(currentDir);
+            int rightDir = turnRight(currentDir);
+            int backDir = turnBack(currentDir);
+            tryOrder = new int[]{ leftDir, currentDir, rightDir, backDir };
+        }
 
         for (int d : tryOrder) {
             int[] delta = getMoveDelta(d);
@@ -156,21 +219,19 @@ public class MazeController {
                 car.setX(x);
                 car.setY(y);
                 car.setHeading(d);
-                listener.onPositionChanged();
+                listener.positionChanged();
                 checkExit();
                 return;
             }
         }
 
-        // no valid move - stuck
         running = false;
-        listener.onStatusChanged("Stuck! Press Reset to try again.");
+        listener.statusChanged("Stuck! Press Reset to try again.");
     }
 
     public void setRunning(boolean val) { running = val; }
     public boolean isRunning() { return running; }
 
-    // direction helpers
     private int turnLeft(int dir) {
         if (dir == Car.RIGHT) return Car.UP;
         if (dir == Car.UP)    return Car.LEFT;
@@ -200,12 +261,10 @@ public class MazeController {
         return new int[]{ 0, 0 };
     }
 
-    // getters
     public int getX() { return x; }
     public int getY() { return y; }
     public int getSpriteSize() { return spriteSize; }
     public int getMoveSpeed() { return moveSpeed; }
     public Car getCar() { return car; }
     public Image getMazeImage() { return mazeImage; }
-
 }
